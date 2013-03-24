@@ -58,14 +58,14 @@ public class Main
 		List<String> clses = new ArrayList<String>();
 		ClassParser parser = new ClassParser(inFile, entryName);
 		JavaClass javaClass = parser.parse();
-		Constant[] constantPool = javaClass.getConstantPool().getConstantPool();
+		ConstantPool realConstantPool = javaClass.getConstantPool();
+		Constant[] constantPool = realConstantPool.getConstantPool();
 		for(Constant constant : constantPool)
 		{
 			if(constant instanceof ConstantClass)
 			{
 				ConstantClass cls = (ConstantClass) constant;
-				ConstantUtf8 utf8 = (ConstantUtf8) constantPool[cls.getNameIndex()];
-				clses.add(utf8.getBytes());
+				clses.add(cls.getBytes(realConstantPool));
 			}
 		}
 		return clses;
