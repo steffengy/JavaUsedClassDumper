@@ -20,37 +20,70 @@ import org.apache.bcel.classfile.ConstantUtf8;
 import org.apache.bcel.classfile.JavaClass;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
+import joptsimple.OptionException;
+import joptsimple.OptionParser;
+import joptsimple.OptionSet;
+
+import static java.util.Arrays.asList;
 
 public class Main 
 {
-	public static void main(String[] args)
+	private static boolean isInheritance = false;
+	
+	private static OptionSet options;
+	public static void main(String[] args) throws IOException
 	{
-		if(args.length != 1 && args.length != 2)
-			System.out.println(".jar InputJar (OutputJar)");
-		else
-		{
-			StopWatch stopWatch = new StopWatch();
-			stopWatch.start();
-			String output = null;
-			if(args.length == 2)
-			{
-				output = args[1];
-			}
-			try {
-				List<String> classes = processJar(args[0]);
-				if(output == null)
-					for(String str : classes)
-						System.out.println(str);
-				else
-					FileUtils.writeLines(new File(output), classes);
-				stopWatch.stop();
-				System.out.println(classes.size() + " entrys in " + stopWatch.getTime() + "ms");
-			} catch (IOException e) {
-				System.out.println("Error");
-				e.printStackTrace();
-			}
-		}
+		OptionParser parser = new OptionParser() {
+            {
+                acceptsAll(asList("?", "help"), "Show the help");
+
+                acceptsAll(asList("i", "jarFile"), "The input jar file")
+                        .withRequiredArg()
+                        .ofType(String.class);
+
+                acceptsAll(asList("o", "outputFile"), "The output, if not specified, print to console")
+                        .withRequiredArg()
+                        .ofType(String.class);
+
+                acceptsAll(asList("s", "inheritance"), "Print inheritance instead of classes used");
+            }
+        };
+        
+        try {
+            options = parser.parse(args);
+        } catch (OptionException ex) {
+            System.out.println(ex.getLocalizedMessage());
+            System.exit(-1);
+            return;
+        }
+
+        if (options == null || options.has("?")) {
+            try {
+                parser.printHelpOn(System.err);
+            } catch (IOException ex) {
+                System.out.println(ex.getLocalizedMessage());
+            }
+            System.exit(-1);
+            return;
+        }
+        
+        if(options.has("inheritance"))
+        	isInheritance = true;
+        
+        if(options.has("jarFile"))
+        {
+        	List<String> classes = processJar((String) options.valueOf("jarFile"));
+        	if(!options.has("outputFile"))
+				for(String str : classes)
+					System.out.println(str);
+			else
+				FileUtils.writeLines(new File((String) options.valueOf("outputFile")), classes);
+			System.out.println(classes.size() + " entrys");
+        }
+        
+        
 	}
 	
 	private static List<String> processClass(String inFile, String entryName) throws ClassFormatException, IOException 
@@ -58,15 +91,45 @@ public class Main
 		List<String> clses = new ArrayList<String>();
 		ClassParser parser = new ClassParser(inFile, entryName);
 		JavaClass javaClass = parser.parse();
-		ConstantPool realConstantPool = javaClass.getConstantPool();
-		Constant[] constantPool = realConstantPool.getConstantPool();
-		for(Constant constant : constantPool)
+		
+		if(!isInheritance)
 		{
-			if(constant instanceof ConstantClass)
+			ConstantPool realConstantPool = javaClass.getConstantPool();
+			Constant[] constantPool = realConstantPool.getConstantPool();
+			for(Constant constant : constantPool)
 			{
-				ConstantClass cls = (ConstantClass) constant;
-				clses.add(cls.getBytes(realConstantPool));
+				if(constant instanceof ConstantClass)
+				{
+					ConstantClass cls = (ConstantClass) constant;
+					clses.add(cls.getBytes(realConstantPool));
+				}
+				else if(constant instanceof ConstantUtf8)
+				{
+					String utf8 = ((ConstantUtf8) constant).getBytes();
+					if(utf8.startsWith("L") && utf8.endsWith(";"))
+					{
+						clses.add(utf8.substring(1, utf8.length() - 1));
+					}
+				}
 			}
+		}
+		else
+		{
+			String interfaces = StringUtils.join(javaClass.getInterfaceNames(), ";");
+			
+			String superName = "";
+			try{
+				for(JavaClass cl : javaClass.getSuperClasses())
+				{
+					superName += cl.getClassName() + ";";
+				}
+			} 
+			catch (ClassNotFoundException e)
+			{
+				superName += ";";
+			}
+			
+			clses.add((javaClass.getClassName() + "|" + superName + "|" + interfaces).replace(".", "/"));
 		}
 		return clses;
 	}
